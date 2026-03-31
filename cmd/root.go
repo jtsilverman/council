@@ -16,6 +16,7 @@ var (
 	flagCouncil  string
 	flagMembers  int
 	flagStrategy string
+	flagConfig   string
 )
 
 var rootCmd = &cobra.Command{
@@ -40,6 +41,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&flagCouncil, "council", "general", "Council to use (general, code-review, writing)")
 	rootCmd.PersistentFlags().IntVar(&flagMembers, "members", 0, "Override council size (2-7)")
 	rootCmd.PersistentFlags().StringVar(&flagStrategy, "strategy", "", "Deliberation strategy (debate, vote, ranked)")
+	rootCmd.PersistentFlags().StringVar(&flagConfig, "config", "", "Path to custom council YAML config")
 }
 
 func Execute() {
