@@ -13,3 +13,10 @@ func RenderJSON(w io.Writer, d *council.Deliberation) error {
 	enc.SetIndent("", "  ")
 	return enc.Encode(d)
 }
+
+// RenderAnyJSON writes any value as indented JSON.
+func RenderAnyJSON(w io.Writer, v interface{}) error {
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	return enc.Encode(v)
+}
