@@ -7,13 +7,30 @@ import (
 	"github.com/jtsilverman/council/internal/provider"
 )
 
+// Providers maps member indices to their providers. If a member index isn't in
+// the map, the Default provider is used.
+type Providers struct {
+	Default  provider.Provider
+	PerModel map[int]provider.Provider // member index -> provider
+}
+
+// For returns the provider for a given member index.
+func (p *Providers) For(idx int) provider.Provider {
+	if p.PerModel != nil {
+		if prov, ok := p.PerModel[idx]; ok {
+			return prov
+		}
+	}
+	return p.Default
+}
+
 // Strategy defines how a council deliberates.
 type Strategy interface {
-	Run(ctx context.Context, c *Council, query string, p provider.Provider) (*Deliberation, error)
+	Run(ctx context.Context, c *Council, query string, p *Providers) (*Deliberation, error)
 }
 
 // Run executes a council deliberation with the given strategy.
-func Run(ctx context.Context, c *Council, query string, p provider.Provider, strat Strategy) (*Deliberation, error) {
+func Run(ctx context.Context, c *Council, query string, p *Providers, strat Strategy) (*Deliberation, error) {
 	start := time.Now()
 
 	delib, err := strat.Run(ctx, c, query, p)

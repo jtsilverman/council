@@ -33,57 +33,85 @@ go install github.com/jtsilverman/council@latest
 
 Or download a binary from [Releases](https://github.com/jtsilverman/council/releases).
 
-## Usage
+## Quick Start
 
 ```bash
-# General question
+# Ask anything
 council "What are the trade-offs of microservices vs monolith?"
 
-# Pipe code for review
+# Code review
 cat main.go | council --council code-review
+
+# Light review (2 members, fast)
+cat main.go | council --council code-review --light
+
+# Deep review (4 members + debate)
+cat main.go | council --council code-review --deep
+
+# Review with all 10 experts
+cat main.go | council --council code-review --all
+
+# Pick specific experts
+cat main.go | council --council code-review --with "security,concurrency,data"
 
 # Review writing
 cat draft.md | council --council writing
-
-# Faster: vote strategy (no debate round)
-council --strategy vote "Which database should I use for time-series data?"
-
-# Full deliberation trace
-council --verbose "Review this API design" < api.go
-
-# JSON output for automation
-council --json "Analyze this architecture" < design.md
-
-# Use API mode (faster, costs money)
-council --api "Complex question requiring fast response"
-
-# Override model
-council --model claude-sonnet-4-20250514 "Your question"
-
-# List all available councils
-council list
 ```
 
-## Built-in Councils
+## Multi-Model Experiments
 
-| Council | Members | Best for |
-|---------|---------|----------|
-| `general` | Analytical Thinker, Creative Problem Solver, Practical Engineer | Architecture decisions, trade-off analysis, general questions |
-| `code-review` | Security Auditor, Performance Engineer, Bug Hunter, Maintainability Critic | Code review with multi-perspective analysis |
-| `writing` | Editor, Fact Checker, Audience Advocate | Improving drafts, catching errors, reader experience |
+Council auto-detects providers from model names. Subscriptions first (free), APIs as fallback.
+
+```bash
+# Mix Claude + GPT + Gemini (each uses cheapest available method)
+council --models "claude-opus-4-6,gpt-5.4,gemini-2.5-pro" "Your question"
+
+# See what's available on your system
+council providers
+```
+
+| Model prefix | Detection order |
+|-------------|----------------|
+| `claude-*` | `claude --print` (free) > Anthropic API |
+| `gpt-*`, `o3`, `o4-*` | `codex exec` (free) > OpenAI API |
+| `gemini-*` | `gemini` CLI (free) > Gemini API |
+| `ollama:*` | Local HTTP (free) |
+| `kimi-*` | Kimi API |
+| `MiniMax-*` | MiniMax API |
+| anything else | OpenRouter API (fallback) |
+
+## Code Review Council (10 Members)
+
+```bash
+council members   # see all available members
+```
+
+| Member | Focus | Set |
+|--------|-------|-----|
+| `security` | Injection, auth bypass, data exposure, crypto | core, light |
+| `bugs` | Logic errors, edge cases, nil dereferences, races | core, light |
+| `performance` | Bottlenecks, allocations, N+1, caching | core |
+| `maintainability` | Readability, abstraction, naming, coupling | core |
+| `concurrency` | Race conditions, deadlocks, goroutine leaks | extended |
+| `api` | Endpoints, contracts, versioning, compatibility | extended |
+| `data` | SQL, migrations, transactions, cascades | extended |
+| `errors` | Swallowed errors, retries, panic paths | extended |
+| `deps` | Unused imports, deprecated packages, licenses | extended |
+| `tests` | Coverage gaps, brittle tests, missing edge cases | extended |
+
+Selection: `--light` (2), default (4), `--all` (10), `--with "name,name"` (pick).
 
 ## Deliberation Strategies
 
-| Strategy | Phases | Cost | Best for |
-|----------|--------|------|----------|
-| `debate` (default) | Review + Debate + Synthesis | ~10 LLM calls | Complex questions where perspectives might conflict |
-| `vote` | Review + Synthesis | ~5 LLM calls | Factual questions, faster results |
+| Strategy | Phases | Speed | Best for |
+|----------|--------|-------|----------|
+| `vote` (default) | Review + Synthesis | Fast (~30s) | Most queries, code review |
+| `debate` (`--deep`) | Review + Debate + Synthesis | Slower (~90s) | Complex questions, contested trade-offs |
 
 ## Custom Councils
 
-Create a YAML file (`.council.yaml` in your project, or `~/.config/council/councils/*.yaml`):
-
 ```yaml
+# .council.yaml
 name: architecture-review
 description: Review system architecture decisions
 strategy: debate
@@ -92,55 +120,37 @@ members:
     persona: "You specialize in distributed systems..."
   - name: Cost Optimizer
     persona: "You think about AWS bills..."
-  - name: Operations Engineer
-    persona: "You think about what breaks at 3 AM..."
 chair:
   name: VP of Engineering
-  persona: "You weigh trade-offs and make final calls..."
+  persona: "You weigh trade-offs..."
 ```
 
-```bash
-council --council architecture-review "Should we add a cache layer here?"
-```
-
-## Multi-Provider Support
+## Scan a Directory
 
 ```bash
-# OpenAI (requires OPENAI_API_KEY)
-council --api --provider openai --model gpt-4o "Your question"
+# Light review of every source file
+council scan .
 
-# Gemini (requires GEMINI_API_KEY)
-council --api --provider gemini --model gemini-2.5-pro "Your question"
-
-# Ollama (local, free)
-council --api --provider ollama --model llama3.1 "Your question"
-
-# OpenRouter (single key for any model, requires OPENROUTER_API_KEY)
-council --api --provider openrouter --model anthropic/claude-sonnet-4-20250514 "Your question"
+# Deep review
+council scan --deep ./src/
 ```
 
 ## The Hard Part
 
-The debate prompt engineering. The quality of the entire system depends on how members debate.
+Debate prompt engineering. Too agreeable and you get a rubber stamp. Too adversarial and everything gets challenged into oblivion.
 
-Too agreeable and you get a rubber stamp (no value over single model). Too adversarial and everything gets challenged into oblivion. The sweet spot: members challenge findings only within their expertise, with specific technical reasons.
-
-The debate prompt enforces this: "Challenge findings ONLY if you have a specific technical reason. State your reason. Don't challenge findings outside your expertise unless they're clearly wrong."
-
-The chair synthesis prompt resolves conflicts: "Findings supported by 2+ members are high confidence. Findings challenged with valid reasoning should be downgraded or dropped."
-
-Calibrated by running the code-review council on known-buggy code (SQL injection, race conditions) and known-clean code. False positive rate is low because the debate round kills weak findings.
+The solution: members challenge findings only within their expertise, with specific technical reasons. The chair resolves conflicts by keeping consensus findings and dropping successfully challenged ones.
 
 ## Inspired By
 
-[Karpathy's llm-council](https://github.com/karpathy/llm-council) showed the concept. Council is the production CLI version: Go binary, pipe-friendly, configurable strategies, custom councils, multi-provider, $0 default mode.
+[Karpathy's llm-council](https://github.com/karpathy/llm-council) proved the concept (16K stars). Council is the production CLI: Go binary, pipe-friendly, multi-provider auto-detection, configurable strategies, 10 expert personas, custom councils.
 
 ## Tech Stack
 
-- **Go 1.24** for a fast, single-binary CLI
+- **Go 1.24** for fast single-binary CLI
 - **cobra** for CLI framework
-- **anthropic-sdk-go** for Anthropic API
 - **goroutines** for parallel member execution
+- 8 provider backends (3 CLI subscription, 5 API)
 
 ## License
 

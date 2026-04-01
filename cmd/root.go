@@ -9,14 +9,16 @@ import (
 
 var (
 	flagJSON     bool
-	flagAPI      bool
 	flagVerbose  bool
-	flagProvider string
 	flagModel    string
+	flagModels   string
 	flagCouncil  string
-	flagMembers  int
 	flagStrategy string
 	flagConfig   string
+	flagDeep     bool
+	flagLight    bool
+	flagAll      bool
+	flagWith     string
 )
 
 var rootCmd = &cobra.Command{
@@ -27,21 +29,23 @@ then runs a debate round where they challenge each other, and a chair
 synthesizes the final answer.
 
 By default, uses claude --print (subscription, $0 cost).
-Use --api to use the Anthropic API instead.`,
+Use --models to mix different LLM providers.`,
 	Args: cobra.ArbitraryArgs,
 	RunE: runCouncil,
 }
 
 func init() {
 	rootCmd.PersistentFlags().BoolVar(&flagJSON, "json", false, "Output as JSON")
-	rootCmd.PersistentFlags().BoolVar(&flagAPI, "api", false, "Use API instead of CLI (costs money)")
 	rootCmd.PersistentFlags().BoolVar(&flagVerbose, "verbose", false, "Show deliberation details")
-	rootCmd.PersistentFlags().StringVar(&flagProvider, "provider", "anthropic", "LLM provider (anthropic, openai, gemini, ollama)")
 	rootCmd.PersistentFlags().StringVar(&flagModel, "model", "", "Override model for all members")
+	rootCmd.PersistentFlags().StringVar(&flagModels, "models", "", "Comma-separated models (auto-detects providers)")
 	rootCmd.PersistentFlags().StringVar(&flagCouncil, "council", "general", "Council to use (general, code-review, writing)")
-	rootCmd.PersistentFlags().IntVar(&flagMembers, "members", 0, "Override council size (2-7)")
-	rootCmd.PersistentFlags().StringVar(&flagStrategy, "strategy", "", "Deliberation strategy (debate, vote, ranked)")
+	rootCmd.PersistentFlags().StringVar(&flagStrategy, "strategy", "", "Deliberation strategy (debate, vote)")
 	rootCmd.PersistentFlags().StringVar(&flagConfig, "config", "", "Path to custom council YAML config")
+	rootCmd.PersistentFlags().BoolVar(&flagDeep, "deep", false, "Full debate strategy (slower, more thorough)")
+	rootCmd.PersistentFlags().BoolVar(&flagLight, "light", false, "Light review: 2 members only (Security + Bug Hunter)")
+	rootCmd.PersistentFlags().BoolVar(&flagAll, "all", false, "All 10 code review members")
+	rootCmd.PersistentFlags().StringVar(&flagWith, "with", "", "Pick specific members by name (e.g. \"security,concurrency,data\")")
 }
 
 func Execute() {

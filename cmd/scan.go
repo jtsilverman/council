@@ -14,7 +14,6 @@ import (
 	"github.com/jtsilverman/council/internal/council"
 	"github.com/jtsilverman/council/internal/output"
 	"github.com/jtsilverman/council/internal/persona"
-	"github.com/jtsilverman/council/internal/provider"
 	"github.com/jtsilverman/council/internal/strategy"
 )
 
@@ -87,18 +86,19 @@ func runScan(cmd *cobra.Command, args []string) error {
 	}
 
 	// Light review: 2 members, vote strategy
-	scanStrategy := "vote"
-	scanMembers := 2
-	if flagStrategy != "" {
-		scanStrategy = flagStrategy
-	}
-	if flagMembers > 0 {
-		scanMembers = flagMembers
+	if flagDeep {
+		c.Strategy = "debate"
+	} else if flagStrategy != "" {
+		c.Strategy = flagStrategy
+	} else {
+		c.Strategy = "vote"
 	}
 
-	c.Strategy = scanStrategy
-	if scanMembers < len(c.Members) {
-		c.Members = c.Members[:scanMembers]
+	// Apply member selection
+	applyMemberFlags(c)
+	if !flagAll && flagWith == "" && !flagLight {
+		// Default scan: light (2 members)
+		c.Members = persona.LightMembers()
 	}
 
 	if flagModel != "" {
@@ -108,15 +108,10 @@ func runScan(cmd *cobra.Command, args []string) error {
 		c.Chair.Model = flagModel
 	}
 
-	// Create provider
-	var p provider.Provider
-	if flagAPI {
-		p, err = provider.NewAnthropicProvider()
-		if err != nil {
-			return err
-		}
-	} else {
-		p = provider.NewCLIProvider(flagModel)
+	// Create providers
+	providers, err := buildProviders()
+	if err != nil {
+		return err
 	}
 
 	strat := strategy.Get(c.Strategy)
@@ -162,7 +157,7 @@ func runScan(cmd *cobra.Command, args []string) error {
 			copy(members, c.Members)
 			fileCopy.Members = members
 
-			delib, err := council.Run(cmd.Context(), &fileCopy, query, p, strat)
+			delib, err := council.Run(cmd.Context(), &fileCopy, query, providers, strat)
 			if err != nil {
 				n := atomic.AddInt64(&completed, 1)
 				fmt.Fprintf(os.Stderr, "  [%d/%d] Error %s: %v\n", n, len(files), relFile, err)

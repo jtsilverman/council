@@ -11,10 +11,10 @@ import (
 	"github.com/jtsilverman/council/internal/provider"
 )
 
-// DebateStrategy implements: parallel review → debate → chair synthesis.
+// DebateStrategy implements: parallel review -> debate -> chair synthesis.
 type DebateStrategy struct{}
 
-func (s *DebateStrategy) Run(ctx context.Context, c *council.Council, query string, p provider.Provider) (*council.Deliberation, error) {
+func (s *DebateStrategy) Run(ctx context.Context, c *council.Council, query string, p *council.Providers) (*council.Deliberation, error) {
 	delib := &council.Deliberation{}
 
 	// Phase 1: Independent review (parallel)
@@ -43,7 +43,8 @@ func (s *DebateStrategy) Run(ctx context.Context, c *council.Council, query stri
 	// Phase 3: Chair synthesis
 	fmt.Fprintf(os.Stderr, "Phase 3: Chair synthesis...\n")
 	synthesisPrompt := s.buildSynthesisPrompt(query, reviewResponses, debateResponses)
-	resp, err := p.Complete(ctx, provider.CompletionRequest{
+	chairProvider := p.Default // Chair always uses default provider
+	resp, err := chairProvider.Complete(ctx, provider.CompletionRequest{
 		SystemPrompt: c.Chair.Persona,
 		UserPrompt:   synthesisPrompt,
 		Model:        c.Chair.Model,
@@ -63,7 +64,7 @@ func (s *DebateStrategy) Run(ctx context.Context, c *council.Council, query stri
 	return delib, nil
 }
 
-func (s *DebateStrategy) parallelReview(ctx context.Context, members []council.Member, query string, p provider.Provider) ([]council.Response, error) {
+func (s *DebateStrategy) parallelReview(ctx context.Context, members []council.Member, query string, p *council.Providers) ([]council.Response, error) {
 	responses := make([]council.Response, len(members))
 	var wg sync.WaitGroup
 	var mu sync.Mutex
@@ -73,7 +74,8 @@ func (s *DebateStrategy) parallelReview(ctx context.Context, members []council.M
 		wg.Add(1)
 		go func(idx int, member council.Member) {
 			defer wg.Done()
-			resp, err := p.Complete(ctx, provider.CompletionRequest{
+			prov := p.For(idx)
+			resp, err := prov.Complete(ctx, provider.CompletionRequest{
 				SystemPrompt: member.Persona,
 				UserPrompt:   query,
 				Model:        member.Model,
@@ -113,7 +115,7 @@ func (s *DebateStrategy) buildDebateContext(reviews []council.Response) string {
 	return b.String()
 }
 
-func (s *DebateStrategy) parallelDebate(ctx context.Context, members []council.Member, query string, debateContext string, p provider.Provider) ([]council.Response, error) {
+func (s *DebateStrategy) parallelDebate(ctx context.Context, members []council.Member, query string, debateContext string, p *council.Providers) ([]council.Response, error) {
 	responses := make([]council.Response, len(members))
 	var wg sync.WaitGroup
 	var mu sync.Mutex
@@ -136,7 +138,8 @@ Do not repeat or summarize. Focus on disagreements and additions.`
 
 			prompt := fmt.Sprintf("Original query:\n%s\n\n%s\n%s", query, debateContext, debateInstructions)
 
-			resp, err := p.Complete(ctx, provider.CompletionRequest{
+			prov := p.For(idx)
+			resp, err := prov.Complete(ctx, provider.CompletionRequest{
 				SystemPrompt: member.Persona,
 				UserPrompt:   prompt,
 				Model:        member.Model,

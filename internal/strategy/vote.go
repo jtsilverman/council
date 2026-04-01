@@ -10,14 +10,14 @@ import (
 	"github.com/jtsilverman/council/internal/provider"
 )
 
-// VoteStrategy implements: parallel review → chair aggregation (no debate round).
+// VoteStrategy implements: parallel review -> chair aggregation (no debate round).
 // Cheaper and faster than debate. Good for factual questions.
 type VoteStrategy struct{}
 
-func (s *VoteStrategy) Run(ctx context.Context, c *council.Council, query string, p provider.Provider) (*council.Deliberation, error) {
+func (s *VoteStrategy) Run(ctx context.Context, c *council.Council, query string, p *council.Providers) (*council.Deliberation, error) {
 	delib := &council.Deliberation{}
 
-	// Phase 1: Independent review (parallel) — same as debate
+	// Phase 1: Independent review (parallel)
 	fmt.Fprintf(os.Stderr, "Phase 1: Independent review (%d members)...\n", len(c.Members))
 	ds := &DebateStrategy{}
 	reviewResponses, err := ds.parallelReview(ctx, c.Members, query, p)
@@ -43,7 +43,8 @@ Synthesize a final response from the member responses above.
 Identify consensus points (majority agreement) and note any disagreements.
 Produce a clear, decisive answer. Prioritize by impact.`)
 
-	resp, err := p.Complete(ctx, provider.CompletionRequest{
+	chairProvider := p.Default
+	resp, err := chairProvider.Complete(ctx, provider.CompletionRequest{
 		SystemPrompt: c.Chair.Persona,
 		UserPrompt:   b.String(),
 		Model:        c.Chair.Model,
