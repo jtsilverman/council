@@ -51,12 +51,13 @@ func (p *GeminiProvider) Complete(ctx context.Context, req CompletionRequest) (*
 	body := map[string]any{"contents": contents}
 	jsonBody, _ := json.Marshal(body)
 
-	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s", model, p.apiKey)
+	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent", model)
 	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(jsonBody))
 	if err != nil {
 		return nil, err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("x-goog-api-key", p.apiKey)
 
 	resp, err := http.DefaultClient.Do(httpReq)
 	if err != nil {

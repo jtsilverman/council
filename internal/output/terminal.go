@@ -3,11 +3,20 @@ package output
 import (
 	"fmt"
 	"io"
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/jtsilverman/council/internal/council"
 )
+
+// ansiRe strips ANSI escape sequences from untrusted LLM output.
+var ansiRe = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]|\x1b\][^\x07]*\x07`)
+
+// sanitize removes ANSI escape sequences from a string.
+func sanitize(s string) string {
+	return ansiRe.ReplaceAllString(s, "")
+}
 
 // Colors for terminal output (ANSI escape codes).
 const (
@@ -33,7 +42,7 @@ func renderConcise(w io.Writer, d *council.Deliberation) error {
 	// Show the synthesis (final answer)
 	fmt.Fprintf(w, "\n%s%s Council — Final Answer%s\n", colorBold, colorGreen, colorReset)
 	fmt.Fprintf(w, "%s%s(synthesized by %s)%s\n\n", colorDim, colorWhite, d.Synthesis.Member, colorReset)
-	fmt.Fprintln(w, d.Synthesis.Content)
+	fmt.Fprintln(w, sanitize(d.Synthesis.Content))
 
 	// Footer with stats
 	fmt.Fprintf(w, "\n%s%s─────────────────────────────────%s\n", colorDim, colorWhite, colorReset)
@@ -64,13 +73,13 @@ func renderVerbose(w io.Writer, d *council.Deliberation) error {
 				fmt.Fprintf(w, " %s%s(%s)%s", colorDim, colorWhite, formatDuration(r.Latency), colorReset)
 			}
 			fmt.Fprintln(w)
-			fmt.Fprintln(w, r.Content)
+			fmt.Fprintln(w, sanitize(r.Content))
 		}
 	}
 
 	fmt.Fprintf(w, "\n%s%s═══ SYNTHESIS ═══%s\n", colorBold, colorGreen, colorReset)
 	fmt.Fprintf(w, "%s%s── %s%s\n", colorBold, colorGreen, d.Synthesis.Member, colorReset)
-	fmt.Fprintln(w, d.Synthesis.Content)
+	fmt.Fprintln(w, sanitize(d.Synthesis.Content))
 
 	// Footer
 	fmt.Fprintf(w, "\n%s%s─────────────────────────────────%s\n", colorDim, colorWhite, colorReset)
