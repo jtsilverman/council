@@ -86,27 +86,29 @@ func runCouncil(cmd *cobra.Command, args []string) error {
 		c.Members = c.Members[:flagMembers]
 	}
 
-	// Create provider
-	var p provider.Provider
+	// Create provider — use a router so each member's model resolves to
+	// the correct backend (claude --print, codex exec, gemini cli, or APIs).
+	var fallback provider.Provider
 	if flagAPI {
 		switch flagProvider {
 		case "openai":
-			p, err = provider.NewOpenAIProvider()
+			fallback, err = provider.NewOpenAIProvider()
 		case "gemini":
-			p, err = provider.NewGeminiProvider()
+			fallback, err = provider.NewGeminiProvider()
 		case "openrouter":
-			p, err = provider.NewOpenRouterProvider()
+			fallback, err = provider.NewOpenRouterProvider()
 		case "ollama":
-			p = provider.NewOllamaProvider("")
+			fallback = provider.NewOllamaProvider("")
 		default:
-			p, err = provider.NewAnthropicProvider()
+			fallback, err = provider.NewAnthropicProvider()
 		}
 		if err != nil {
 			return fmt.Errorf("create %s provider: %w", flagProvider, err)
 		}
 	} else {
-		p = provider.NewCLIProvider(flagModel)
+		fallback = provider.NewCLIProvider(flagModel)
 	}
+	p := provider.NewRouter(flagAPI, fallback)
 
 	// Get strategy
 	strat := strategy.Get(c.Strategy)
