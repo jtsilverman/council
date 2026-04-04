@@ -25,7 +25,13 @@ func DetectProvider(modelName string) (Provider, error) {
 	// GPT/o-series models → codex exec (free) or OpenAI API
 	if isOpenAIModel(modelName) {
 		if cliAvailable("codex") {
-			return NewCodexProvider(modelName), nil
+			cp := NewCodexProvider(modelName)
+			if hasEnv("OPENAI_API_KEY") {
+				if oai, err := NewOpenAIProvider(); err == nil {
+					cp.fallback = oai
+				}
+			}
+			return cp, nil
 		}
 		if hasEnv("OPENAI_API_KEY") {
 			return NewOpenAIProvider()
