@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/jtsilverman/council/internal/council"
 	"github.com/jtsilverman/council/internal/provider"
+	"github.com/jtsilverman/council/internal/review"
 )
 
 // VoteStrategy implements: parallel review -> chair aggregation (no debate round).
@@ -20,7 +20,8 @@ func (s *VoteStrategy) Run(ctx context.Context, c *council.Council, query string
 	// Phase 1: Independent review (parallel)
 	fmt.Fprintf(os.Stderr, "Phase 1: Independent review (%d members)...\n", len(c.Members))
 	ds := &DebateStrategy{}
-	reviewResponses, err := ds.parallelReview(ctx, c.Members, query, p)
+	profile := provider.DefaultProfile()
+	reviewResponses, err := ds.parallelReview(ctx, c.Members, query, profile, p)
 	if err != nil {
 		return nil, fmt.Errorf("review phase: %w", err)
 	}
@@ -29,24 +30,20 @@ func (s *VoteStrategy) Run(ctx context.Context, c *council.Council, query string
 		Responses: reviewResponses,
 	})
 
+	// Parse review responses into digests
+	reviewDigests := make([]review.ReviewDigest, len(reviewResponses))
+	for i, r := range reviewResponses {
+		reviewDigests[i] = review.ParseDigest(r.Content)
+	}
+
 	// Phase 2: Chair synthesis (no debate)
 	fmt.Fprintf(os.Stderr, "Phase 2: Chair aggregation...\n")
-	var b strings.Builder
-	b.WriteString(fmt.Sprintf("Original query:\n%s\n\n", query))
-	b.WriteString("=== MEMBER RESPONSES ===\n\n")
-	for _, r := range reviewResponses {
-		b.WriteString(fmt.Sprintf("--- %s ---\n%s\n\n", r.Member, r.Content))
-	}
-	b.WriteString(`=== YOUR TASK ===
-
-Synthesize a final response from the member responses above.
-Identify consensus points (majority agreement) and note any disagreements.
-Produce a clear, decisive answer. Prioritize by impact.`)
+	synthesisPrompt := BuildSynthesisPrompt(profile, query, reviewDigests)
 
 	chairProvider := p.Default
 	resp, err := chairProvider.Complete(ctx, provider.CompletionRequest{
 		SystemPrompt: c.Chair.Persona,
-		UserPrompt:   b.String(),
+		UserPrompt:   synthesisPrompt,
 		Model:        c.Chair.Model,
 		MaxTokens:    4096,
 	})
