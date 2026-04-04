@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // CodexFailureKind classifies codex exec outcomes for retry decisions.
@@ -135,11 +136,15 @@ func trimPromptForRetry(prompt string) string {
 		return prompt
 	}
 
-	// Find last newline before budget
+	// Find last newline before budget (rune-safe)
 	truncated := prompt[:budget]
 	lastNL := strings.LastIndex(truncated, "\n")
 	if lastNL > 0 {
 		return truncated[:lastNL]
 	}
-	return truncated
+	// No newline found -- back up to rune boundary
+	for budget > 0 && !utf8.RuneStart(prompt[budget]) {
+		budget--
+	}
+	return prompt[:budget]
 }

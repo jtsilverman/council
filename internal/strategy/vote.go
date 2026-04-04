@@ -20,8 +20,7 @@ func (s *VoteStrategy) Run(ctx context.Context, c *council.Council, query string
 	// Phase 1: Independent review (parallel)
 	fmt.Fprintf(os.Stderr, "Phase 1: Independent review (%d members)...\n", len(c.Members))
 	ds := &DebateStrategy{}
-	profile := provider.DefaultProfile()
-	reviewResponses, err := ds.parallelReview(ctx, c.Members, query, profile, p)
+	reviewResponses, err := ds.parallelReview(ctx, c.Members, query, p)
 	if err != nil {
 		return nil, fmt.Errorf("review phase: %w", err)
 	}
@@ -38,7 +37,8 @@ func (s *VoteStrategy) Run(ctx context.Context, c *council.Council, query string
 
 	// Phase 2: Chair synthesis (no debate)
 	fmt.Fprintf(os.Stderr, "Phase 2: Chair aggregation...\n")
-	synthesisPrompt := BuildSynthesisPrompt(profile, query, reviewDigests)
+	chairProfile := provider.ProfileFor(p.Default)
+	synthesisPrompt := BuildSynthesisPrompt(chairProfile, query, reviewDigests)
 
 	chairProvider := p.Default
 	resp, err := chairProvider.Complete(ctx, provider.CompletionRequest{

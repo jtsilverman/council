@@ -11,14 +11,11 @@ import (
 
 func TestBuildReviewPrompt_Default(t *testing.T) {
 	profile := provider.DefaultProfile()
-	result := BuildReviewPrompt(profile, "You are a security expert.", "Review this code:\nfunc main() {}")
+	result := BuildReviewPrompt(profile, "Review this code:\nfunc main() {}")
 
 	// Default profile should NOT add output contract
 	if strings.Contains(result, "VERDICT:") && strings.Contains(result, "Respond in this exact format") {
 		t.Error("default profile should not add output contract")
-	}
-	if !strings.Contains(result, "You are a security expert.") {
-		t.Error("should contain persona")
 	}
 	if !strings.Contains(result, "Review this code:") {
 		t.Error("should contain query")
@@ -28,7 +25,7 @@ func TestBuildReviewPrompt_Default(t *testing.T) {
 func TestBuildReviewPrompt_Codex(t *testing.T) {
 	profile := provider.CodexProfile()
 	query := "diff --git a/main.go b/main.go\n--- a/main.go\n+++ b/main.go\n@@ -1,3 +1,4 @@\n package main\n+import \"fmt\"\n func main() {}"
-	result := BuildReviewPrompt(profile, "You are a security expert.", query)
+	result := BuildReviewPrompt(profile, query)
 
 	// Codex profile should add output contract
 	if !strings.Contains(result, "Respond in this exact format") {
@@ -50,14 +47,13 @@ func TestBuildReviewPrompt_Codex(t *testing.T) {
 	}
 }
 
-func TestBuildReviewPrompt_PersonaTrimmed(t *testing.T) {
+func TestBuildReviewPrompt_QueryTruncated(t *testing.T) {
 	profile := provider.CodexRetryProfile() // 4000 char budget
-	longPersona := strings.Repeat("expert ", 1000)
-	query := "review this"
+	longQuery := strings.Repeat("review this code carefully ", 500)
 
-	result := BuildReviewPrompt(profile, longPersona, query)
+	result := BuildReviewPrompt(profile, longQuery)
 
-	if len(result) > profile.ReviewBudgetChars+500 {
+	if len(result) > profile.ReviewBudgetChars {
 		t.Errorf("result too long: %d chars, budget %d", len(result), profile.ReviewBudgetChars)
 	}
 }
@@ -307,11 +303,11 @@ func loadFixture(t *testing.T) string {
 func TestBudgetRegression_CodexReviewUnderBudget(t *testing.T) {
 	fixture := loadFixture(t)
 	profile := provider.CodexProfile()
-	persona := "You are a senior Go engineer specializing in API security and concurrency."
 
 	// BuildReviewPrompt applies workspace rewrite for Codex (PreferWorkspaceRead=true),
 	// which strips pasted file contents and keeps only the diff + file list.
-	result := BuildReviewPrompt(profile, persona, fixture)
+	// Persona is now passed separately via SystemPrompt, not embedded in the prompt.
+	result := BuildReviewPrompt(profile, fixture)
 
 	if len(result) >= profile.ReviewBudgetChars {
 		t.Errorf("Codex review prompt is %d chars, exceeds budget of %d chars",

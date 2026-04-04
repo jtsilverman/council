@@ -24,7 +24,9 @@ SUMMARY: one-line summary
 Severities: critical, high, medium, low. One VERDICT and SUMMARY required. Zero or more FINDINGs.`
 
 // BuildReviewPrompt constructs a review prompt sized to the given profile.
-func BuildReviewPrompt(profile provider.PromptProfile, persona, query string) string {
+// Persona is NOT included here -- it is passed separately as SystemPrompt in the
+// CompletionRequest to avoid duplication (CLI providers concatenate system+user).
+func BuildReviewPrompt(profile provider.PromptProfile, query string) string {
 	var b strings.Builder
 
 	if profile.RequireStructuredDigest {
@@ -37,33 +39,32 @@ func BuildReviewPrompt(profile provider.PromptProfile, persona, query string) st
 		q = RewriteQueryForWorkspace(q)
 	}
 
-	// Trim persona if over budget (reserve space for query + contract)
-	contractLen := b.Len()
-	queryLen := len(q)
-	personaBudget := profile.ReviewBudgetChars - contractLen - queryLen - 100 // 100 char margin
-	if personaBudget < 0 {
-		personaBudget = 0
+	// Truncate query if it exceeds budget (rune-safe)
+	budget := profile.ReviewBudgetChars - b.Len() - 50 // 50 char margin
+	if budget < 0 {
+		budget = 0
 	}
-	trimmedPersona := persona
-	if len(trimmedPersona) > personaBudget {
-		if personaBudget > 0 {
-			// Find the last valid rune boundary at or before personaBudget bytes
-			for personaBudget > 0 && !utf8.RuneStart(trimmedPersona[personaBudget]) {
-				personaBudget--
-			}
-			trimmedPersona = trimmedPersona[:personaBudget]
-		} else {
-			trimmedPersona = ""
-		}
-	}
-
-	if trimmedPersona != "" {
-		b.WriteString(trimmedPersona)
-		b.WriteString("\n\n")
+	if len(q) > budget {
+		q = truncateRuneSafe(q, budget)
 	}
 
 	b.WriteString(q)
 	return b.String()
+}
+
+// truncateRuneSafe truncates s to at most maxBytes, backing up to the last valid
+// rune boundary to avoid splitting multi-byte UTF-8 characters.
+func truncateRuneSafe(s string, maxBytes int) string {
+	if len(s) <= maxBytes {
+		return s
+	}
+	if maxBytes <= 0 {
+		return ""
+	}
+	for maxBytes > 0 && !utf8.RuneStart(s[maxBytes]) {
+		maxBytes--
+	}
+	return s[:maxBytes]
 }
 
 // RewriteQueryForWorkspace replaces pasted file content with workspace-aware stubs.
@@ -214,11 +215,11 @@ func CompactDigests(digests []review.ReviewDigest, budgetChars int) string {
 		return result
 	}
 
-	// Third pass: trim findings to 2, truncate summaries
-	for i, d := range digests {
+	// Third pass: trim findings to 2, truncate summaries (progressive from pass 2)
+	for i, d := range trimmed {
 		t := review.TrimFindings(d, 2)
 		if len(t.Summary) > 100 {
-			t.Summary = t.Summary[:100] + "..."
+			t.Summary = truncateRuneSafe(t.Summary, 100) + "..."
 		}
 		trimmed[i] = t
 	}
@@ -231,11 +232,11 @@ func CompactDigests(digests []review.ReviewDigest, budgetChars int) string {
 		return result
 	}
 
-	// Fourth pass: only critical/high findings, minimal summaries
-	for i, d := range digests {
+	// Fourth pass: only critical/high findings, minimal summaries (progressive from pass 3)
+	for i, d := range trimmed {
 		t := review.TrimFindings(d, 0) // only critical/high
 		if len(t.Summary) > 50 {
-			t.Summary = t.Summary[:50] + "..."
+			t.Summary = truncateRuneSafe(t.Summary, 50) + "..."
 		}
 		trimmed[i] = t
 	}
