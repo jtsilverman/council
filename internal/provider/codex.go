@@ -40,9 +40,14 @@ func (p *CodexProvider) Name() string { return "codex" }
 func (p *CodexProvider) Complete(ctx context.Context, req CompletionRequest) (*CompletionResponse, error) {
 	start := time.Now()
 
+	model := req.Model
+	if model == "" {
+		model = p.model
+	}
+
 	prompt := buildCodexPrompt(req)
 
-	stdout, stderr, err := runCodex(ctx, prompt)
+	stdout, stderr, err := runCodex(ctx, model, prompt)
 	kind := classifyCodexFailure(err, stdout, stderr)
 
 	if kind == CodexOK {
@@ -62,7 +67,7 @@ func (p *CodexProvider) Complete(ctx context.Context, req CompletionRequest) (*C
 	fmt.Fprintf(os.Stderr, "codex: %s, retrying with tighter prompt\n", kind)
 
 	trimmedPrompt := trimPromptForRetry(prompt)
-	stdout2, stderr2, err2 := runCodex(ctx, trimmedPrompt)
+	stdout2, stderr2, err2 := runCodex(ctx, model, trimmedPrompt)
 	kind2 := classifyCodexFailure(err2, stdout2, stderr2)
 
 	if kind2 == CodexOK {
@@ -94,8 +99,13 @@ func buildCodexPrompt(req CompletionRequest) string {
 }
 
 // runCodex executes `codex exec` and returns stdout, stderr, and any error.
-func runCodex(ctx context.Context, prompt string) (stdout, stderr string, err error) {
-	cmd := exec.CommandContext(ctx, "codex", "exec", prompt)
+func runCodex(ctx context.Context, model, prompt string) (stdout, stderr string, err error) {
+	args := []string{"exec"}
+	if model != "" {
+		args = append(args, "--model", model)
+	}
+	args = append(args, prompt)
+	cmd := exec.CommandContext(ctx, "codex", args...)
 
 	var outBuf, errBuf bytes.Buffer
 	cmd.Stdout = &outBuf
@@ -129,9 +139,16 @@ func classifyCodexFailure(err error, stdout, stderr string) CodexFailureKind {
 }
 
 // trimPromptForRetry truncates the prompt to fit within CodexRetryProfile budget.
+// It infers the phase from prompt content and uses the appropriate budget.
 // It cuts at the last newline before the budget limit to avoid splitting mid-line.
 func trimPromptForRetry(prompt string) string {
-	budget := CodexRetryProfile().ReviewBudgetChars
+	retryProfile := CodexRetryProfile()
+	budget := retryProfile.ReviewBudgetChars
+	if strings.Contains(prompt, "PHASE 1 FINDINGS") {
+		budget = retryProfile.DebateBudgetChars
+	} else if strings.Contains(prompt, "ALL FINDINGS") {
+		budget = retryProfile.SynthesisBudgetChars
+	}
 	if len(prompt) <= budget {
 		return prompt
 	}

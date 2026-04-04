@@ -137,9 +137,23 @@ func BuildDebatePrompt(profile provider.PromptProfile, query string, digests []r
 		b.WriteString("\n\n")
 	}
 
-	b.WriteString(fmt.Sprintf("Original query:\n%s\n\n", query))
+	// Budget: allocate half to digests, remainder (minus overhead) to query
+	digestBudget := profile.DebateBudgetChars / 2
+	compacted := CompactDigests(digests, digestBudget)
 
-	compacted := CompactDigests(digests, profile.DebateBudgetChars/2)
+	// Instructions are ~350 chars; reserve space for them + headers
+	overhead := b.Len() + len(compacted) + 400
+	queryBudget := profile.DebateBudgetChars - overhead
+	if queryBudget < 0 {
+		queryBudget = 0
+	}
+	q := query
+	if len(q) > queryBudget {
+		q = truncateRuneSafe(q, queryBudget)
+	}
+
+	b.WriteString(fmt.Sprintf("Original query:\n%s\n\n", q))
+
 	b.WriteString("=== PHASE 1 FINDINGS ===\n\n")
 	b.WriteString(compacted)
 	b.WriteString("\n\n")
@@ -161,9 +175,23 @@ Do not repeat or summarize. Focus on disagreements and additions.`)
 func BuildSynthesisPrompt(profile provider.PromptProfile, query string, allDigests []review.ReviewDigest) string {
 	var b strings.Builder
 
-	b.WriteString(fmt.Sprintf("Original query:\n%s\n\n", query))
+	// Budget: allocate 3/4 to digests, remainder (minus overhead) to query
+	digestBudget := profile.SynthesisBudgetChars * 3 / 4
+	compacted := CompactDigests(allDigests, digestBudget)
 
-	compacted := CompactDigests(allDigests, profile.SynthesisBudgetChars*3/4)
+	// Instructions are ~400 chars; reserve space for them + headers
+	overhead := len(compacted) + 450
+	queryBudget := profile.SynthesisBudgetChars - overhead
+	if queryBudget < 0 {
+		queryBudget = 0
+	}
+	q := query
+	if len(q) > queryBudget {
+		q = truncateRuneSafe(q, queryBudget)
+	}
+
+	b.WriteString(fmt.Sprintf("Original query:\n%s\n\n", q))
+
 	b.WriteString("=== ALL FINDINGS ===\n\n")
 	b.WriteString(compacted)
 	b.WriteString("\n\n")

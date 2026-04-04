@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"strings"
 	"sync"
 
 	"github.com/jtsilverman/council/internal/council"
@@ -124,17 +123,6 @@ func (s *DebateStrategy) parallelReview(ctx context.Context, members []council.M
 	return responses, nil
 }
 
-// buildDebateContext is the legacy method for building debate context from raw responses.
-// Kept for backward compatibility; new code uses BuildDebatePrompt.
-func (s *DebateStrategy) buildDebateContext(reviews []council.Response) string {
-	var b strings.Builder
-	b.WriteString("Here are the independent findings from each council member:\n\n")
-	for _, r := range reviews {
-		b.WriteString(fmt.Sprintf("=== %s ===\n%s\n\n", r.Member, r.Content))
-	}
-	return b.String()
-}
-
 // parallelDebateWithDigests runs the debate phase using structured digests from phase 1.
 func (s *DebateStrategy) parallelDebateWithDigests(ctx context.Context, members []council.Member, query string, digests []review.ReviewDigest, p *council.Providers) ([]council.Response, error) {
 	responses := make([]council.Response, len(members))
@@ -181,90 +169,3 @@ func (s *DebateStrategy) parallelDebateWithDigests(ctx context.Context, members 
 	return responses, nil
 }
 
-// parallelDebate is the legacy debate method using raw context strings.
-// Kept for backward compatibility; new code uses parallelDebateWithDigests.
-func (s *DebateStrategy) parallelDebate(ctx context.Context, members []council.Member, query string, debateContext string, p *council.Providers) ([]council.Response, error) {
-	responses := make([]council.Response, len(members))
-	var wg sync.WaitGroup
-	var mu sync.Mutex
-	var firstErr error
-
-	debateInstructions := `Now review the other council members' findings above.
-
-Your task:
-1. CHALLENGE any finding you disagree with. State your specific technical reason.
-2. SUPPORT any finding you think is especially important. Explain why.
-3. ADD anything the other members missed that falls within your expertise.
-
-Stay in character. Only challenge findings where you have specific technical grounds.
-Do not repeat or summarize. Focus on disagreements and additions.`
-
-	for i, m := range members {
-		wg.Add(1)
-		go func(idx int, member council.Member) {
-			defer wg.Done()
-
-			prompt := fmt.Sprintf("Original query:\n%s\n\n%s\n%s", query, debateContext, debateInstructions)
-
-			prov := p.For(idx)
-			resp, err := prov.Complete(ctx, provider.CompletionRequest{
-				SystemPrompt: member.Persona,
-				UserPrompt:   prompt,
-				Model:        member.Model,
-				MaxTokens:    4096,
-			})
-			if err != nil {
-				mu.Lock()
-				if firstErr == nil {
-					firstErr = fmt.Errorf("%s debate: %w", member.Name, err)
-				}
-				mu.Unlock()
-				return
-			}
-			responses[idx] = council.Response{
-				Member:  member.Name,
-				Content: resp.Content,
-				Tokens:  council.TokenUsage{Input: resp.Tokens.Input, Output: resp.Tokens.Output, Cost: resp.Tokens.Cost},
-				Latency: resp.Latency,
-			}
-			fmt.Fprintf(os.Stderr, "  ✓ %s (debate)\n", member.Name)
-		}(i, m)
-	}
-
-	wg.Wait()
-	if firstErr != nil {
-		return nil, firstErr
-	}
-	return responses, nil
-}
-
-// buildSynthesisPrompt is the legacy method for building synthesis from raw responses.
-// Kept for backward compatibility; new code uses BuildSynthesisPrompt.
-func (s *DebateStrategy) buildSynthesisPrompt(query string, reviews, debates []council.Response) string {
-	var b strings.Builder
-	b.WriteString(fmt.Sprintf("Original query:\n%s\n\n", query))
-
-	b.WriteString("=== PHASE 1: INDEPENDENT REVIEWS ===\n\n")
-	for _, r := range reviews {
-		b.WriteString(fmt.Sprintf("--- %s ---\n%s\n\n", r.Member, r.Content))
-	}
-
-	b.WriteString("=== PHASE 2: DEBATE ===\n\n")
-	for _, r := range debates {
-		b.WriteString(fmt.Sprintf("--- %s ---\n%s\n\n", r.Member, r.Content))
-	}
-
-	b.WriteString(`=== YOUR TASK ===
-
-Synthesize a final response based on the reviews and debate above.
-
-Rules:
-- Points with consensus support (2+ members agree) are high confidence. Include them.
-- Points that were challenged with valid reasoning should be downgraded or dropped.
-- Points that were supported during debate should be highlighted.
-- Do not introduce new points that no member raised.
-- Be decisive. Prioritize by impact.
-- Produce a clear, well-organized final answer.`)
-
-	return b.String()
-}
