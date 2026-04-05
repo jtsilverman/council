@@ -98,14 +98,18 @@ func buildCodexPrompt(req CompletionRequest) string {
 	return prompt
 }
 
-// runCodex executes `codex exec` and returns stdout, stderr, and any error.
+// runCodex executes `codex exec` with the prompt piped via stdin.
+// Passing the prompt as a CLI arg causes the process to hang waiting on stdin;
+// piping avoids this (confirmed with Codex CLI 0.118+).
 func runCodex(ctx context.Context, model, prompt string) (stdout, stderr string, err error) {
-	args := []string{"exec"}
+	args := []string{"exec", "--full-auto"}
 	if model != "" {
 		args = append(args, "--model", model)
 	}
-	args = append(args, prompt)
+	args = append(args, "-")
 	cmd := exec.CommandContext(ctx, "codex", args...)
+
+	cmd.Stdin = strings.NewReader(prompt)
 
 	var outBuf, errBuf bytes.Buffer
 	cmd.Stdout = &outBuf
