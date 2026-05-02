@@ -1,3 +1,5 @@
 /council
 dist/
 *.exe
+
+.env
